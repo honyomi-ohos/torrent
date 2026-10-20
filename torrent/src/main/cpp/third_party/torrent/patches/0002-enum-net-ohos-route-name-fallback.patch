@@ -1,0 +1,97 @@
+diff --git a/src/enum_net.cpp b/src/enum_net.cpp
+index a7c3ba7..eceaa19 100644
+--- a/src/enum_net.cpp
++++ b/src/enum_net.cpp
+@@ -375,7 +375,8 @@ namespace {
+ 		return ret;
+ 	}
+ 
+-	bool parse_route(int s, nlmsghdr const* nl_hdr, ip_route* rt_info)
++	bool parse_route(int s, nlmsghdr const* nl_hdr, ip_route* rt_info
++		, span<link_info const> nics)
+ 	{
+ 		// sanity check
+ 		if (nl_hdr->nlmsg_type != RTM_NEWROUTE) return false;
+@@ -423,7 +424,24 @@ namespace {
+ 		}
+ 
+ 		ifreq req = {};
+-		::if_indextoname(std::uint32_t(if_index), req.ifr_name);
++		if (::if_indextoname(std::uint32_t(if_index), req.ifr_name) == nullptr
++			|| req.ifr_name[0] == '\0')
++		{
++			// some sandboxes (e.g. OHOS) do not permit the SIOCGIFNAME ioctl
++			// that if_indextoname() relies on, leaving every route without a
++			// device name. That makes has_internet_route() fail, which in turn
++			// flags all listen sockets as local-network and blocks tracker
++			// announces. Fall back to the RTM_GETLINK dump the caller already
++			// collected and map the output interface index to its name.
++			req = ifreq{};
++			auto const nic = std::find_if(nics.begin(), nics.end()
++				, [&](link_info const& li) { return li.if_idx == if_index; });
++			if (nic != nics.end())
++			{
++				std::strncpy(req.ifr_name, nic->name, sizeof(req.ifr_name) - 1);
++				req.ifr_name[sizeof(req.ifr_name) - 1] = '\0';
++			}
++		}
+ 		static_assert(sizeof(rt_info->name) >= sizeof(req.ifr_name), "ip_route::name is too small");
+ 		std::memcpy(rt_info->name, req.ifr_name, sizeof(req.ifr_name));
+ 		::ioctl(s, ::siocgifmtu, &req);
+@@ -1400,7 +1418,6 @@ int _System __libsocket_sysctl(int* mib, u_int namelen, void *oldp, size_t *oldl
+ 			return std::vector<ip_route>();
+ 		}
+ 		socket_closer c1(sock);
+-
+ 		int dgram_sock = ::socket(AF_INET, SOCK_DGRAM | flags, 0);
+ 		if (dgram_sock < 0)
+ 		{
+@@ -1409,19 +1426,46 @@ int _System __libsocket_sysctl(int* mib, u_int namelen, void *oldp, size_t *oldl
+ 		}
+ 		socket_closer c2(dgram_sock);
+ 
++		// collect the link-level interface list first. parse_route() needs it
++		// to resolve each route's RTA_OIF index into a device name when
++		// if_indextoname() is unusable (e.g. OHOS app sandbox)
++		struct
++		{
++			struct nlmsghdr hdr;
++			struct ifinfomsg msg;
++		} link_req{};
++
++		link_req.hdr.nlmsg_len = std::uint32_t(NLMSG_LENGTH(sizeof(link_req.msg)));
++		link_req.hdr.nlmsg_type = RTM_GETLINK;
++		link_req.msg.ifi_family = AF_PACKET;
++		link_req.msg.ifi_change = 0xFFFFFFFF;
++
++		std::uint32_t seq = 0;
++		std::vector<link_info> nics;
++		if (nl_dump_request(sock, seq++, &link_req.hdr, [&](nlmsghdr const* msg) {
++				// sanity check
++				if (msg->nlmsg_type != RTM_NEWLINK) return;
++
++				nics.push_back(parse_nl_link(msg));
++			}) != 0)
++		{
++			// the link list is only a fallback for route device names, keep
++			// going without it
++		}
++
+ 		struct
+ 		{
+ 			struct nlmsghdr hdr;
+ 			struct rtmsg msg;
+ 		} request{};
++
+ 		request.hdr.nlmsg_len = std::uint32_t(NLMSG_LENGTH(sizeof(request.msg)));
+ 		request.hdr.nlmsg_type = RTM_GETROUTE;
+ 		request.msg.rtm_family = AF_UNSPEC;
+ 
+-		std::uint32_t seq = 0;
+ 		if (nl_dump_request(sock, seq++, &request.hdr, [&](nlmsghdr const* msg) {
+ 				ip_route r;
+-				if (parse_route(dgram_sock, msg, &r)) ret.push_back(r);
++				if (parse_route(dgram_sock, msg, &r, nics)) ret.push_back(r);
+ 			}) != 0)
+ 		{
+ 			ec = error_code(errno, system_category());

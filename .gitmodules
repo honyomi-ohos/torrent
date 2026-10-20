@@ -1,0 +1,3 @@
+[submodule "torrent/src/main/cpp/third_party/torrent/libtorrent"]
+	path = torrent/src/main/cpp/third_party/torrent/libtorrent
+	url = https://github.com/arvidn/libtorrent.git

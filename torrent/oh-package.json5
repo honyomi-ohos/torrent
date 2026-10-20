@@ -1,0 +1,11 @@
+{
+  "name": "@honyomi/torrent",
+  "version": "1.0.0",
+  "description": "Honyomi BT 下载能力模块：libtorrent-rasterbar 2.0.15 + OpenSSL 3.5.9（双 ABI 预编译静态库），经 NAPI 暴露为独立模块 libtorrent.so。",
+  "main": "Index.ets",
+  "author": "honyomi",
+  "license": "",
+  "dependencies": {
+    "libtorrent.so": "file:./src/main/cpp/types/libtorrent"
+  }
+}

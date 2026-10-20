@@ -1,0 +1,19 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+.cache
+*.cer
+*.p7b
+*.p12
+*.csr
+# Boost headers (~140MB) downloaded by CMake configure / fetch-boost script
+/torrent/src/main/cpp/third_party/torrent/deps/

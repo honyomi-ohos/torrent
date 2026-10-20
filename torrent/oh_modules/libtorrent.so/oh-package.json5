@@ -1,0 +1,6 @@
+{
+  "name": "libtorrent.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "Typed surface of libtorrent.so — the BitTorrent engine NAPI module."
+}

@@ -1,0 +1,41 @@
+{
+  "apiType": "stageMode",
+  "buildOption": {
+    "sourceOption": {
+      "workers": [
+        "./src/main/ets/workers/TorrentWorker.ets"
+      ]
+    },
+    "externalNativeOptions": {
+      "path": "./src/main/cpp/CMakeLists.txt",
+      "arguments": "",
+      "cppFlags": "",
+      "abiFilters": [
+        "arm64-v8a",
+        "x86_64"
+      ]
+    },
+    "arkOptions": {
+      "integratedHsp": true
+    }
+  },
+  "buildOptionSet": [
+    {
+      "name": "release",
+      "externalNativeOptions": {
+        "abiFilters": [
+          "arm64-v8a",
+          "x86_64"
+        ]
+      },
+      "arkOptions": {
+        "integratedHsp": true
+      }
+    },
+  ],
+  "targets": [
+    {
+      "name": "default"
+    }
+  ]
+}

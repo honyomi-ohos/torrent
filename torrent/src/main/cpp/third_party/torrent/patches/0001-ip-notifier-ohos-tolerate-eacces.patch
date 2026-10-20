@@ -1,0 +1,74 @@
+diff --git a/src/ip_notifier.cpp b/src/ip_notifier.cpp
+index 98a6eac..5ee39f3 100644
+--- a/src/ip_notifier.cpp
++++ b/src/ip_notifier.cpp
+@@ -137,12 +137,31 @@ private:
+ struct ip_change_notifier_impl final : ip_change_notifier
+ {
+ 	explicit ip_change_notifier_impl(io_context& ios)
+-		: m_socket(ios
+-			, netlink::endpoint(netlink(NETLINK_ROUTE), RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR))
++		: m_ios(ios)
++		, m_socket(ios)
+ 	{
++		// OHOS: the app sandbox denies netlink multicast-group binds with
++		// EACCES, and asio's basic_raw_socket endpoint constructor throws on
++		// bind failure, which would take down the whole session (the exception
++		// escapes create_ip_notifier into session start). Open and bind with
++		// an explicit error_code instead, and degrade to a no-op notifier when
++		// the platform forbids netlink subscriptions.
++		error_code ec;
++		m_socket.open(netlink(NETLINK_ROUTE), ec);
++		if (ec)
++		{
++			m_disabled = true;
++			return;
++		}
++		m_socket.bind(netlink::endpoint(netlink(NETLINK_ROUTE)
++			, RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR), ec);
++		if (ec)
++		{
++			m_disabled = true;
++			return;
++		}
+ 		// Linux can generate ENOBUFS if the socket's buffers are full
+ 		// don't treat it as an error
+-		error_code ec;
+ 		m_socket.set_option(libtorrent::no_enobufs(true), ec);
+ 	}
+ 
+@@ -152,19 +171,29 @@ struct ip_change_notifier_impl final : ip_change_notifier
+ 
+ 	void async_wait(std::function<void(error_code const&)> cb) override
+ 	{
++		if (m_disabled)
++		{
++			post(m_ios, [cb1=std::move(cb)]()
++			{ cb1(make_error_code(boost::system::errc::not_supported)); });
++			return;
++		}
+ 		m_socket.async_receive(boost::asio::buffer(m_buf)
+ 			, [cb1=std::move(cb), this] (error_code const& ec, std::size_t const bytes_transferred)
+-			{
+-				if (ec) cb1(ec);
+-				else this->on_notify(int(bytes_transferred), std::move(cb1));
+-			});
++				{
++					if (ec) cb1(ec);
++					else this->on_notify(int(bytes_transferred), std::move(cb1));
++				});
+ 	}
+ 
+ 	void cancel() override
+-	{ m_socket.cancel();}
++	{
++		if (!m_disabled) m_socket.cancel();
++	}
+ 
+ private:
++	io_context& m_ios;
+ 	netlink::socket m_socket;
++	bool m_disabled = false;
+ 	std::array<char, 4096> m_buf;
+ 
+ 	void on_notify(int len, std::function<void(error_code const& ec)> cb)
