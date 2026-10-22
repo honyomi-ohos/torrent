@@ -174,8 +174,16 @@ function buildAbi(label, arch, subdir) {
     '-DCMAKE_BUILD_TYPE=Release',
     `-DCMAKE_MAKE_PROGRAM=${NINJA}`,
     '-DBUILD_SHARED_LIBS=OFF',
+    // Feature trims (verified unused by torrent_bridge.cpp):
+    //   streaming        - bridge never calls set_piece_deadline
+    //   i2p              - no i2p proxy support configured
+    //   logging          - bridge does not use session_log alerts
+    //   mutable-torrents - v1 mutable torrent (collections) support
+    //   share-mode / superseeding - torrent flags never set by the bridge
+    // dht / encryption / extensions / alert-msg are intentionally kept.
     '-Dstatic_runtime=OFF', '-Ddeprecated-functions=ON',
-    '-DCMAKE_CXX_FLAGS=-D_GNU_SOURCE -Dpthread_setcancelstate(a,b)=((void)0) -ffunction-sections -fdata-sections',
+    '-Dstreaming=OFF', '-Di2p=OFF', '-Dlogging=OFF', '-Dmutable-torrents=OFF',
+    '-DCMAKE_CXX_FLAGS=-D_GNU_SOURCE -Dpthread_setcancelstate(a,b)=((void)0) -DTORRENT_DISABLE_SHARE_MODE -DTORRENT_DISABLE_SUPERSEEDING -ffunction-sections -fdata-sections',
     `-DBoost_INCLUDE_DIR=${path.join(VENDORDIR, 'deps', 'boost-1.86')}`,
     '-DBoost_NO_SYSTEM_PATHS=ON',
     `-DOPENSSL_INCLUDE_DIR=${path.join(VENDORDIR, 'openssl-include')}`,
