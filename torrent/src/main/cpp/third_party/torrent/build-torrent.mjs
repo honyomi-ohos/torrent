@@ -175,7 +175,7 @@ function buildAbi(label, arch, subdir) {
     `-DCMAKE_MAKE_PROGRAM=${NINJA}`,
     '-DBUILD_SHARED_LIBS=OFF',
     '-Dstatic_runtime=OFF', '-Ddeprecated-functions=ON',
-    '-DCMAKE_CXX_FLAGS=-D_GNU_SOURCE -Dpthread_setcancelstate(a,b)=((void)0)',
+    '-DCMAKE_CXX_FLAGS=-D_GNU_SOURCE -Dpthread_setcancelstate(a,b)=((void)0) -ffunction-sections -fdata-sections',
     `-DBoost_INCLUDE_DIR=${path.join(VENDORDIR, 'deps', 'boost-1.86')}`,
     '-DBoost_NO_SYSTEM_PATHS=ON',
     `-DOPENSSL_INCLUDE_DIR=${path.join(VENDORDIR, 'openssl-include')}`,

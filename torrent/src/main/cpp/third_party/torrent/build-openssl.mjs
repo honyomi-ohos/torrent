@@ -256,6 +256,15 @@ if (process.platform === 'win32') {
     }
   }
   if (!fs.existsSync(bashExe)) die(`bash.exe not found at ${bashExe} after bootstrap`);
+  // msys2-runtime automounts drives under /cygdrive when /etc/fstab is
+  // absent; force the standard MSYS2 "/" prefix so the /c/... POSIX paths
+  // used below resolve, and provide /tmp (silences a bash startup warning).
+  const fstab = path.join(MSYS, 'etc', 'fstab');
+  if (!fs.existsSync(fstab)) {
+    fs.mkdirSync(path.dirname(fstab), { recursive: true });
+    fs.writeFileSync(fstab, 'none / cygdrive binary,posix=0 0 0\n');
+  }
+  fs.mkdirSync(path.join(MSYS, 'tmp'), { recursive: true });
 } else {
   // macOS / Linux: system perl + make required.
   for (const t of ['perl', 'make']) {
@@ -308,11 +317,18 @@ function buildAbi(label, triple, otarget, libdir, subdir, machine) {
       '#!/bin/bash',
       'set -euo pipefail',
       `export PATH="/usr/bin:${toPosix(path.join(SDK, 'llvm', 'bin'))}"`,
-      `export CC="clang -target ${triple} --sysroot=${SDK.replace(/\\\\/g, '/')}/sysroot -D__MUSL__"`,
+      `export CC="clang -target ${triple} --sysroot=${SDK.replace(/\\\\/g, '/')}/sysroot -D__MUSL__ -ffunction-sections -fdata-sections"`,
       'export AR=llvm-ar',
       'export RANLIB=llvm-ranlib',
       `cd "${toPosix(srcdir)}"`,
       `perl Configure ${otarget} --prefix="${toPosix(prefix)}" --openssldir="${toPosix(path.join(prefix, 'ssl'))}" no-shared no-tests no-docs`,
+      // msys perl rewrites the forward-slash --sysroot path inside $ENV{CC}
+      // into a backslash Windows path when it generates the Makefile. Those
+      // backslashes are then consumed as escapes by the shell interpreting
+      // make recipes, corrupting the sysroot path ("stdlib.h file not
+      // found"). Normalize the CC line back to forward slashes (that line
+      // only, so make's own line continuations stay intact).
+      "sed -i '/^CC=/s|\\\\|/|g' Makefile",
       `make -j${JOBS} build_libs`,
       'make install_dev'
     ].join('\n') + '\n';
@@ -323,7 +339,7 @@ function buildAbi(label, triple, otarget, libdir, subdir, machine) {
     const env = {
       ...process.env,
       PATH: path.join(SDK, 'llvm', 'bin') + path.delimiter + (process.env.PATH ?? ''),
-      CC: `clang -target ${triple} --sysroot=${path.join(SDK, 'sysroot')} -D__MUSL__`,
+      CC: `clang -target ${triple} --sysroot=${path.join(SDK, 'sysroot')} -D__MUSL__ -ffunction-sections -fdata-sections`,
       AR: 'llvm-ar',
       RANLIB: 'llvm-ranlib'
     };
@@ -348,7 +364,10 @@ function buildAbi(label, triple, otarget, libdir, subdir, machine) {
     fs.rmSync(path.join(VENDORDIR, 'openssl-include'), { recursive: true, force: true });
     fs.mkdirSync(path.join(VENDORDIR, 'openssl-include'), { recursive: true });
     fs.cpSync(path.join(prefix, 'include', 'openssl'), path.join(VENDORDIR, 'openssl-include', 'openssl'), { recursive: true });
-    fs.copyFileSync(path.join(srcdir, 'LICENSE'), path.join(VENDORDIR, 'prebuilt', 'openssl-LICENSE.txt'));
+    // Official release tarballs ship "LICENSE"; the git tree (used when the
+    // tarball is reproduced via git archive) ships "LICENSE.txt".
+    const licSrc = [path.join(srcdir, 'LICENSE'), path.join(srcdir, 'LICENSE.txt')].find(p => fs.existsSync(p));
+    fs.copyFileSync(licSrc, path.join(VENDORDIR, 'prebuilt', 'openssl-LICENSE.txt'));
     console.log('-> openssl-include/ + prebuilt/openssl-LICENSE.txt refreshed');
   }
 }

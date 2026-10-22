@@ -103,6 +103,13 @@ set_target_properties(torrent_rasterbar PROPERTIES
 add_library(torrent SHARED
     torrent_bridge.cpp)
 
+# Dead-code elimination: every .a above is compiled with
+# -ffunction-sections -fdata-sections (build-openssl.mjs / build-torrent.mjs),
+# so gc-sections drops unreferenced functions at link time (unused OpenSSL
+# algorithms, libtorrent features, and any unused static-libc++ pieces).
+target_compile_options(torrent PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(torrent PRIVATE -Wl,--gc-sections)
+
 target_link_libraries(torrent PUBLIC
     torrent_deps
     torrent_rasterbar
