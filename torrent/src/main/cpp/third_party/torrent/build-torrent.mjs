@@ -180,10 +180,12 @@ function buildAbi(label, arch, subdir) {
     //   logging          - bridge does not use session_log alerts
     //   mutable-torrents - v1 mutable torrent (collections) support
     //   share-mode / superseeding - torrent flags never set by the bridge
-    // dht / encryption / extensions / alert-msg are intentionally kept.
-    '-Dstatic_runtime=OFF', '-Ddeprecated-functions=ON',
+    //   deprecated-functions - ABI 3; bridge migrated off status()/dht_nodes enum values
+    //   alert-msg        - alert::message() returns {}; bridge only uses error codes
+    // dht / encryption / extensions are intentionally kept.
+    '-Dstatic_runtime=OFF', '-Ddeprecated-functions=OFF',
     '-Dstreaming=OFF', '-Di2p=OFF', '-Dlogging=OFF', '-Dmutable-torrents=OFF',
-    '-DCMAKE_CXX_FLAGS=-D_GNU_SOURCE -Dpthread_setcancelstate(a,b)=((void)0) -DTORRENT_DISABLE_SHARE_MODE -DTORRENT_DISABLE_SUPERSEEDING -ffunction-sections -fdata-sections',
+    '-DCMAKE_CXX_FLAGS=-D_GNU_SOURCE -Dpthread_setcancelstate(a,b)=((void)0) -DTORRENT_DISABLE_SHARE_MODE -DTORRENT_DISABLE_SUPERSEEDING -DTORRENT_DISABLE_ALERT_MSG -ffunction-sections -fdata-sections',
     `-DBoost_INCLUDE_DIR=${path.join(VENDORDIR, 'deps', 'boost-1.86')}`,
     '-DBoost_NO_SYSTEM_PATHS=ON',
     `-DOPENSSL_INCLUDE_DIR=${path.join(VENDORDIR, 'openssl-include')}`,

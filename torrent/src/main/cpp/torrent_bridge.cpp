@@ -73,6 +73,10 @@ std::unique_ptr<lt::session> g_session;
 std::string g_downloadDir;
 std::map<uint32_t, TorrentEntry> g_torrents;
 std::atomic<uint32_t> g_nextTorrentId{1};
+// DHT node count is fetched via session stats: metric index into
+// session_stats_alert::counters() and the latest cached value.
+int g_dhtNodesMetricIdx = -1;
+int g_dhtNodes = 0;
 
 // ============================================================================
 // String helpers
@@ -201,8 +205,6 @@ std::string JsonEscape(const std::string &text)
 const char *StateName(lt::torrent_status::state_t state)
 {
     switch (state) {
-        case lt::torrent_status::queued_for_checking:
-            return "queued_for_checking";
         case lt::torrent_status::checking_files:
             return "checking_files";
         case lt::torrent_status::downloading_metadata:
@@ -213,8 +215,6 @@ const char *StateName(lt::torrent_status::state_t state)
             return "finished";
         case lt::torrent_status::seeding:
             return "seeding";
-        case lt::torrent_status::allocating:
-            return "allocating";
         case lt::torrent_status::checking_resume_data:
             return "checking_resume_data";
         default:
@@ -429,16 +429,26 @@ napi_value TorrentStart(napi_env env, napi_callback_info info)
     settings.set_int(lt::settings_pack::max_peer_recv_buffer_size, 5 * 1024 * 1024);
     settings.set_int(lt::settings_pack::aio_threads, 8);
     settings.set_int(lt::settings_pack::checking_mem_usage, 2048);
+    const lt::alert_category_t alertMask = lt::alert_category::error
+        | lt::alert_category::status
+        | lt::alert_category::storage
+        | lt::alert_category::tracker
+        | lt::alert_category::dht
+        | lt::alert_category::connect;
+    // ABI 3 makes bitfield_flag's conversion operator explicit.
     settings.set_int(lt::settings_pack::alert_mask,
-        static_cast<int>(lt::alert_category::error) |
-        static_cast<int>(lt::alert_category::status) |
-        static_cast<int>(lt::alert_category::storage) |
-        static_cast<int>(lt::alert_category::tracker) |
-        static_cast<int>(lt::alert_category::dht) |
-        static_cast<int>(lt::alert_category::connect));
+        static_cast<int>(static_cast<std::uint32_t>(alertMask)));
 
     lt::session_params params(settings);
     g_session = std::make_unique<lt::session>(params);
+    g_dhtNodes = 0;
+    for (const lt::stats_metric &metric : lt::session_stats_metrics()) {
+        if (std::strcmp(metric.name, "dht.dht_nodes") == 0) {
+            g_dhtNodesMetricIdx = metric.value_index;
+            break;
+        }
+    }
+    g_session->post_session_stats();
     g_downloadDir = downloadDir;
     g_torrents.clear();
     OH_LOG_Print(LOG_APP, LOG_INFO, TORRENT_LOG_DOMAIN, TORRENT_LOG_TAG,
@@ -1158,8 +1168,19 @@ napi_value TorrentPollAlerts(napi_env env, napi_callback_info info)
             // into this alert; surfacing it is the only way to see why the
             // engine (listen sockets / DHT / tracker announces) died.
             event = "{\"type\":\"sessionError\",\"message\":\"";
-            event += JsonEscape(a->message());
+            event += JsonEscape(a->error.message());
             event += "\"}";
+        } else if (const auto *a = lt::alert_cast<lt::session_stats_alert>(alert)) {
+            // posted by post_session_stats(); refresh the cached DHT node count
+            if (g_dhtNodesMetricIdx >= 0) {
+                const lt::span<std::int64_t const> counters = a->counters();
+                if (g_dhtNodesMetricIdx < static_cast<int>(counters.size())) {
+                    g_dhtNodes = static_cast<int>(counters[g_dhtNodesMetricIdx]);
+                }
+            }
+            event.clear();
+        } else if (lt::alert_cast<lt::session_stats_header_alert>(alert) != nullptr) {
+            event.clear();
         } else if (lt::alert_cast<lt::dht_outgoing_get_peers_alert>(alert) != nullptr) {
             // high-volume DHT lookup noise: intentionally not surfaced
             event.clear();
@@ -1194,8 +1215,11 @@ napi_value TorrentSessionDhtNodes(napi_env env, napi_callback_info info)
         napi_create_int32(env, 0, &result);
         return result;
     }
-    const int nodes = static_cast<int>(g_session->status().dht_nodes);
-    napi_create_int32(env, nodes, &result);
+    // Ask the session to publish a session_stats_alert; the cached count is
+    // refreshed when TorrentPollAlerts consumes it (session::status() is
+    // deprecated in libtorrent 2.x).
+    g_session->post_session_stats();
+    napi_create_int32(env, g_dhtNodes, &result);
     return result;
 }
 

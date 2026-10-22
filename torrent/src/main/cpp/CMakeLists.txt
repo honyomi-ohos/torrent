@@ -95,6 +95,19 @@ target_compile_definitions(torrent_deps INTERFACE
     OPENSSL_NO_TLS1_1
     OPENSSL_NO_DTLS1
     _GNU_SOURCE)
+# Feature/ABI defines mirroring the prebuilt lib build (build-torrent.mjs).
+# The bridge MUST see the same header surface: TORRENT_NO_DEPRECATE bumps
+# TORRENT_ABI_VERSION 1 -> 3 (v2 inline namespace), which removes deprecated
+# declarations and changes some class layouts (e.g. torrent_alert::name).
+target_compile_definitions(torrent_deps INTERFACE
+    TORRENT_NO_DEPRECATE
+    TORRENT_DISABLE_ALERT_MSG
+    TORRENT_DISABLE_SHARE_MODE
+    TORRENT_DISABLE_SUPERSEEDING
+    TORRENT_DISABLE_STREAMING
+    TORRENT_DISABLE_MUTABLE_TORRENTS
+    TORRENT_DISABLE_LOGGING
+    TORRENT_USE_I2P=0)
 
 add_library(torrent_rasterbar STATIC IMPORTED)
 set_target_properties(torrent_rasterbar PROPERTIES
